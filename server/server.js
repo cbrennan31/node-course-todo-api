@@ -1,6 +1,7 @@
-let express = require('express')
-let bodyParser = require('body-parser')
-let {ObjectID} = require('mongodb')
+const _ = require('lodash')
+const express = require('express')
+const bodyParser = require('body-parser')
+const {ObjectID} = require('mongodb')
 
 let { mongoose } = require('./db/mongoose')
 const { Todo } = require('./models/todo')
@@ -38,13 +39,72 @@ app.get('/todos/:id', (req, res) => {
   }
   // if object id is invalid
 
-  let todo = Todo.findById(req.params.id).then((todo) => {
+  let todo = Todo.findById(id).then((todo) => {
     if (!todo) {
       return res.status(404).send()
     }
     // if object id is valid, but that id is not in the database
     res.send({todo})
   }, (e) => {
+    res.status(400).send(e)
+  })
+})
+
+app.delete('/todos/:id', (req, res) => {
+  let id = req.params.id
+
+  if (!ObjectID.isValid(id)) {
+    return res.status(404).send()
+  }
+  // if object id is invalid
+
+  let todo = Todo.findByIdAndRemove(id).then((todo) => {
+    if (!todo) {
+      return res.status(404).send()
+    }
+    // if object id is valid, but that id is not in the database
+    res.send({todo})
+  }, (e) => {
+    res.status(400).send(e)
+  })
+})
+
+app.patch('/todos/:id', (req, res) => {
+  let id = req.params.id
+  let body = _.pick(req.body, ['text', 'completed'])
+  // comparable strong params
+
+  if (!ObjectID.isValid(id)) {
+    return res.status(404).send()
+  }
+
+  if (body.completed === true) {
+    body.completedAt = new Date().getTime()
+  } else {
+    body.completedAt = null
+  }
+
+  let todo = Todo.findByIdAndUpdate(id, {$set: body}, {new: true}).then((todo) => {
+    if (!todo) {
+      return res.status(404).send()
+    }
+    // if object id is valid, but that id is not in the database
+    res.send({todo})
+  }, (e) => {
+    res.status(400).send(e)
+  })
+  // if object id is invalid
+})
+
+app.post('/users', (req, res) => {
+  let body = _.pick(req.body, ['email', 'password'])
+  let user = new User(body)
+
+  user.save().then(() => {
+    return user.generateAuthToken()
+  }).then((token) => {
+    res.header('x-auth', token).send(user)
+  }).catch((e) => {
     res.status(400).send(e)
   })
 })
