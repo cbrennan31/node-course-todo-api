@@ -2,6 +2,7 @@ const _ = require('lodash')
 const express = require('express')
 const bodyParser = require('body-parser')
 const {ObjectID} = require('mongodb')
+const bcrypt = require('bcryptjs')
 
 let { mongoose } = require('./db/mongoose')
 const { Todo } = require('./models/todo')
@@ -12,9 +13,10 @@ let app = express();
 
 app.use(bodyParser.json());
 
-app.post('/todos', (req, res) => {
+app.post('/todos', authenticate, (req, res) => {
   let todo = new Todo({
-    text: req.body.text
+    text: req.body.text,
+    _creator: req.user._id
   })
 
   todo.save().then((doc) => {
@@ -24,23 +26,24 @@ app.post('/todos', (req, res) => {
   })
 })
 
-app.get('/todos', (req, res) => {
-  let todos = Todo.find().then((todos) => {
+app.get('/todos', authenticate, (req, res) => {
+  let todos = Todo.find({_creator: req.user._id}).then((todos) => {
     res.send({todos})
   }, (e) => {
       res.status(400).send(e)
   })
 })
 
-app.get('/todos/:id', (req, res) => {
+app.get('/todos/:id', authenticate, (req, res) => {
   let id = req.params.id
-
   if (!ObjectID.isValid(id)) {
     return res.status(404).send()
   }
   // if object id is invalid
-
-  let todo = Todo.findById(id).then((todo) => {
+  let todo = Todo.findOne({
+    _id: id,
+    _creator: req.user._id
+  }).then((todo) => {
     if (!todo) {
       return res.status(404).send()
     }
@@ -51,7 +54,7 @@ app.get('/todos/:id', (req, res) => {
   })
 })
 
-app.delete('/todos/:id', (req, res) => {
+app.delete('/todos/:id', authenticate, (req, res) => {
   let id = req.params.id
 
   if (!ObjectID.isValid(id)) {
@@ -59,7 +62,10 @@ app.delete('/todos/:id', (req, res) => {
   }
   // if object id is invalid
 
-  let todo = Todo.findByIdAndRemove(id).then((todo) => {
+  let todo = Todo.findOneAndRemove({
+    _id: id,
+    _creator: req.user._id
+  }).then((todo) => {
     if (!todo) {
       return res.status(404).send()
     }
@@ -70,7 +76,7 @@ app.delete('/todos/:id', (req, res) => {
   })
 })
 
-app.patch('/todos/:id', (req, res) => {
+app.patch('/todos/:id', authenticate, (req, res) => {
   let id = req.params.id
   let body = _.pick(req.body, ['text', 'completed'])
   // comparable strong params
@@ -85,7 +91,12 @@ app.patch('/todos/:id', (req, res) => {
     body.completedAt = null
   }
 
-  let todo = Todo.findByIdAndUpdate(id, {$set: body}, {new: true}).then((todo) => {
+  let todo = Todo.findOneAndUpdate({
+      _id: id,
+      _creator: req.user._id
+    },
+    {$set: body},
+    {new: true}).then((todo) => {
     if (!todo) {
       return res.status(404).send()
     }
@@ -109,8 +120,34 @@ app.post('/users', (req, res) => {
   })
 })
 
+app.post('/users/login', (req, res) => {
+  let body = _.pick(req.body, ['email', 'password'])
+
+  User.findByCredentials(body.email, body.password).then((user) => {
+    return user.generateAuthToken().then((token) => {
+      res.header('x-auth', token).send(user.toJSON())
+    })
+  }).catch((e) => {
+    res.status(400).send(e)
+  })
+})
+
 app.get('/users/me', authenticate, (req, res) => {
   res.send(req.user)
+})
+
+app.delete('/users/me', authenticate, (req, res) => {
+  const token = req.header('x-auth')
+
+  User.findByToken(token).then((user) => {
+    const index = user.tokens.findIndex((t) => t.token === token)
+    user.tokens.splice(index, 1)
+    user.save().then((user) => {
+      res.send(user.toJSON())
+    })
+  }).catch((e) => {
+    res.status(400).send(e)
+  })
 })
 
 app.listen(3000, () => {

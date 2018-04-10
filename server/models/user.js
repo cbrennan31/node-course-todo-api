@@ -69,6 +69,22 @@ UserSchema.methods.generateAuthToken = function () {
   })
 }
 
+UserSchema.methods.removeToken = function (token) {
+  let user = this
+
+  return user.update({
+    $pull: {
+      tokens: {token}
+    }
+  });
+
+  // const index = user.tokens.findIndex((t) => t.token === token)
+  // user.tokens.splice(index, 1)
+  //
+  // return user.save()
+}
+
+
 UserSchema.statics.findByToken = function (token) {
   let User = this;
   var decoded
@@ -86,6 +102,30 @@ UserSchema.statics.findByToken = function (token) {
   })
 }
 
-var User = mongoose.model('User', UserSchema)
+UserSchema.statics.findByCredentials = function (email, password) {
+  let User = this
+
+  return User.findOne({
+    email: email
+  }).then((user) => {
+    if (!user) {
+      return Promise.reject()
+    }
+
+    return new Promise ((resolve, reject) => {
+      bcrypt.compare(password, user.password, (err, res) => {
+        if (res === true) {
+          resolve(user)
+        } else {
+          reject()
+        }
+      })
+    })
+    // this ensures that the resolved promise doesn't return until the callback finishes
+    // executing
+  })
+}
+
+let User = mongoose.model('User', UserSchema)
 
 module.exports = { User };
